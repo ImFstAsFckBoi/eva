@@ -1,4 +1,6 @@
+module Eva  where
 
+import Eva.Expr (Expr(..), Term(..), exprSize)
 
 data ExprState = Reducible Expr | Irreducible Expr
 data Op = Divide | Multiply
@@ -14,18 +16,6 @@ canReduce (Irreducible _) = False
 canReduce (Reducible _ ) = True
 
 
-data Expr = Frac Expr Expr
-          | Mult Expr Expr
-          | Expo Expr Expr
-          | Term Term
-
-
-exprSize :: Expr -> Int
-exprSize (Frac a b) = exprSize a + exprSize b
-exprSize (Mult a b) = exprSize a + exprSize b
-exprSize (Expo a b) = exprSize a + exprSize b
-exprSize (Term _) = 1
-
 minf :: Ord b => (a -> b) -> [a] -> Maybe a
 minf f [] = Nothing
 minf f (a:as) = go f a as
@@ -40,24 +30,7 @@ maxf f (a:as) = go f a as
   where
     go f c [] = Just c
     go f c (a:as) | f c < f a = go f a as
-                    | otherwise = go f c as
-
-instance Show Expr where
-  show (Frac a b) = "(" ++ show a ++ "/" ++ show b ++ ")"
-  show (Mult (Term (Symbol a)) b) = show b ++ a
-  show (Mult a (Term (Symbol b))) = show a ++ b
-  show (Mult a b) = "(" ++ show a ++ "*" ++ show b ++ ")"
-  show (Expo a b) = show a ++ "^" ++ show b
-  show (Term a) = show a
-
-
-data Term = Symbol String
-          | Value Integer
-
-instance Show Term where
-  show (Symbol a) = a
-  show (Value a) = show a
-
+                  | otherwise = go f c as
 
 evaluate :: Expr -> Expr
 evaluate e = unwrap (eval (Reducible e))

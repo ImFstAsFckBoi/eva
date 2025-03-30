@@ -1,0 +1,10 @@
+cradle:
+  cabal:
+    - path: "src/Eva.hs"
+      component: "eva:exe:eva"
+
+    - path: "src/Eva/Expr.hs"
+      component: "eva:exe:eva"
+
+    - path: "src/Eva/Parser.hs"
+      component: "eva:exe:eva"
