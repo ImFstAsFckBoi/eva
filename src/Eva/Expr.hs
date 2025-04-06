@@ -1,7 +1,8 @@
 module Eva.Expr (
   Expr(..),
   Term(..),
-  exprSize) where
+  exprSize,
+  showTree) where
 
 data Expr = Frac Expr Expr
           | Mult Expr Expr
@@ -31,6 +32,31 @@ instance Show Expr where
   show (Term a) = show a
 
 
+showTree :: Expr -> String
+showTree e = go e 0
+  where
+    buildStr :: Int -> String -> String
+    buildStr n s | n > 0 = s ++ buildStr (n-1) s
+                 | n <= 0 = ""
+
+    getIndent :: Int -> String
+    getIndent n = buildStr (n-1) "┃ " ++ if n > 0 then "┗━" else ""
+
+    goBinary :: Char -> Int -> Expr -> Expr -> String
+    goBinary c i a b = getIndent i ++ c:"\n" ++ go a (i+1) ++ go b (i+1)
+
+    goTerm :: Term -> Int -> String
+    goTerm (Symbol s) i = getIndent i ++ s ++ "\n"
+    goTerm (Value v) i = getIndent i ++ show v ++ "\n"
+
+    go :: Expr -> Int -> String
+    go (Frac a b) i = goBinary '/' i a b
+    go (Mult a b) i = goBinary '*' i a b
+    go (Expo a b) i = goBinary '^' i a b
+    go (Add a b) i = goBinary '+' i a b
+    go (Sub a b) i = goBinary '-' i a b
+    go (Term t) i = goTerm t i
+    
 data Term = Symbol String
           | Value Integer
 

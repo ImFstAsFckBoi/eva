@@ -1,9 +1,11 @@
 module Eva  where
 
-import Eva.Expr (Expr(..), Term(..), exprSize)
+import Eva.Expr (Expr(..), Term(..), exprSize, showTree)
+import Eva.Parser (parse)
+
 
 data ExprState = Reducible Expr | Irreducible Expr
-data Op = Divide | Multiply
+data Op = DIV | MULT | ADD | SUB | EXPO
 
 
 unwrap :: ExprState -> Expr
@@ -47,18 +49,19 @@ evalExpr (Irreducible (Term a)) = Irreducible (Term a)
 
 
 evalTerm :: Op -> Term -> Term -> Expr
-evalTerm Divide (Value a) (Value b) =  Term (Value (a `div` b))
-evalTerm Multiply (Value a) (Value b) =  Term (Value (a * b))
-evalTerm Multiply (Symbol a) (Symbol b) | a == b = Expo (Term (Symbol a)) (Term (Value 2))
-                                     | otherwise = Mult (Term (Symbol a)) (Term (Symbol b))
-
-evalTerm Divide a b = Frac (Term a) (Term b)
-evalTerm Multiply a b = Mult (Term a) (Term b)
-
+evalTerm ADD (Value a) (Value b) = Term(Value (a + b))
+evalTerm SUB (Value a) (Value b) = Term(Value (a - b))
+evalTerm EXPO (Value a) (Value b) = Term(Value (a ^ b))
+evalTerm DIV (Value a) (Value b) =  Term (Value (a `div` b))
+evalTerm MULT (Value a) (Value b) =  Term (Value (a * b))
+evalTerm MULT (Symbol a) (Symbol b) | a == b = Expo (Term (Symbol a)) (Term (Value 2))
+                                    | otherwise = Mult (Term (Symbol a)) (Term (Symbol b))
+evalTerm DIV a b = Frac (Term a) (Term b)
+evalTerm MULT a b = Mult (Term a) (Term b)
 
 -- Reduction rules for multiplications
 evalMult :: Expr -> Expr -> ExprState
-evalMult (Term a) (Term b) = Irreducible (evalTerm Multiply a b)
+evalMult (Term a) (Term b) = Irreducible (evalTerm MULT a b)
 evalMult (Frac a b) (Frac c d) = Reducible (Frac (unwrap (evalExpr (Reducible (Mult a c)))) (unwrap (evalExpr (Reducible (Mult b d)))))
 evalMult a b = if
   canReduce ea || canReduce eb
@@ -71,7 +74,7 @@ evalMult a b = if
 
 -- Reduction rules for fractions
 evalFrac :: Expr -> Expr -> ExprState
-evalFrac (Term a) (Term b) = Irreducible (evalTerm Divide a b)
+evalFrac (Term a) (Term b) = Irreducible (evalTerm DIV a b)
 evalFrac (Frac a b) (Frac c d) = Reducible (Frac (unwrap (evalExpr (Reducible (Mult a d)))) (unwrap (evalExpr (Reducible (Mult b c)))))
 evalFrac (Mult a b) (Term c) = evalExpr (Reducible (Mult a (unwrap (evalExpr (Reducible (Frac b (Term c)))))))
 evalFrac a b = if
@@ -86,8 +89,9 @@ evalFrac a b = if
 
 
 main :: IO()
-main = do
-  print (Frac (Mult (Term (Value 2)) (Term (Symbol "a"))) (Term (Value 2)))
-  print (exprSize (unwrap (evalFrac (Mult (Term (Value 2)) (Term (Symbol "a"))) (Term (Value 2)))))
-  --print (exprSize(evaluate (Frac (Frac (Term (Symbol "a")) (Term (Value 2))) (Frac (Term (Symbol "b")) (Term (Value 2))))))
+main = do putStr "> "
+          e <- parse <$> getLine
+          putStrLn $ case e of
+                       Left error -> error
+                       Right expr -> (showTree . evaluate) expr
 
