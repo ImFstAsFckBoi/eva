@@ -1,12 +1,16 @@
-module Eva.Parser where
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use lambda-case" #-}
+
+
+module Eva.Parser (parse) where
 
 import Eva.Expr (Expr(..), Term(..))
 import Data.Char (isAlpha, isNumber)
-
+import Control.Applicative (Alternative(..))
 
 {-
 
-<S> ::= <E> $
+<S> ::= <E>
 
 <E> ::= <F> <E'>
     |   <F>
@@ -34,68 +38,110 @@ import Data.Char (isAlpha, isNumber)
 
 -}
 
+type Error a b = Either a b
+
+newtype Parser a = Parser { runParser :: String -> Either String (a, String) }
 
 
-s :: String -> (Expr, String)
-s = e
+instance Functor Parser where
+  fmap f (Parser p) = Parser $ \input ->
+    case p input of
+      Right (a, rest) -> Right (f a, rest)
+      Left e          -> Left e
 
 
-e :: String -> (Expr, String)
-e as = e' s l where (l, s) = f as
+instance Applicative Parser where
+  pure x = Parser $ \input -> Right (x, input)
+
+  (Parser pf) <*> (Parser pa) = Parser $
+    \input -> case pf input of
+      Right (f, rest1) -> case pa rest1 of
+                            Right (a, rest2) -> Right (f a, rest2)
+                            Left e           -> Left e
+      Left e           -> Left e
 
 
-e' :: String -> Expr -> (Expr, String)
-e' (a:as) p | a == '+' = (Add p r, s)
-            | a == '-' = (Sub p r, s)
-            | otherwise = (p, a:as)
-            where
-              (r, s) = f as
+instance Monad Parser where
+  (Parser pa) >>= f = Parser $ \input ->
+    case pa input of
+      Right (a, rest) -> runParser (f a) rest
+      Left e          -> Left e
 
-f :: String -> (Expr, String)
-f as = f' s l where (l, s) = g as
-
-
-f' :: String -> Expr -> (Expr, String)
-f' (a:as) p | a == '*' = (Mult p r, s)
-            | a == '/' = (Frac p r, s)
-            | otherwise = (p, a:as)
-            where
-              (r, s) = g as
-
-g :: String -> (Expr, String)
-g as | b == '^' = (Expo l r, s)
-     | otherwise = (l, b:bs)
-     where
-       (r, s) = g bs
-       (l, b:bs) = h as
-    
-h :: String -> (Expr, String)
-h (a:as) | a == '-' = (Umin e, s)
-         | otherwise = t (a:as)
-         where
-           (e, s) = t as
-
-t :: String -> (Expr, String)
-t (a:as) | a == '(' = (c, bs)
-         | isAlpha a = (Term (Symbol sym), ss)
-         | isNumber a = (Term (Value (read num)), ns)
-         where
-           (sym, ss) = parseUntilF isAlpha (a:as)
-           (num, ns) = parseUntilF isNumber (a:as)
-           (c, b:bs) = e as
+instance Alternative Parser where
+  empty = Parser $ \_ -> Left "No alternative"
+  (Parser a) <|> (Parser b) = Parser $ \input -> case a input of
+                                                   Right r  -> Right r
+                                                   Left err -> case b input of
+                                                                 Right br -> Right br
+                                                                 Left berr -> Left $ "No alternative matched:\n1) " ++ err ++ "\n2) " ++ berr
 
 
-parseUntilF :: (Char -> Bool) -> String -> (String, String)
-parseUntilF _ [] = ("", "")
-parseUntilF f (a:as) | f a = (a:n, r)
-                     | otherwise = ("", a:as)
-                     where
-                       (n, r) = parseUntilF f as
+parseChar :: Char -> Parser ()
+parseChar c = Parser $ \input -> case input of
+                                   (a:as) -> if a == c then Right ((), as) else Left ""
+                                   []     -> Left $ "Tried to parse '" ++ c:"' but found end of string"
+
+parseS :: Parser Expr
+parseS = parseE
 
 
-parse :: String -> Expr
-parse as | r == "$" = expr
-         | otherwise = undefined
-         where
-           (expr, r) = e (as ++ "$")
+parseE :: Parser Expr
+parseE = parseF >>= parseE'
 
+
+parseE' :: Expr -> Parser Expr
+parseE' e = (parseChar '+' *> (Add e <$> parseF) >>= parseE')
+            <|> (parseChar '-' *> (Sub e <$> parseF) >>= parseE')
+            <|> pure e
+
+parseF :: Parser Expr
+parseF = parseG >>= parseF'
+
+
+parseF' ::  Expr -> Parser Expr
+parseF' e = (parseChar '*' *> (Mult e <$> parseG) >>= parseF')
+            <|> (parseChar '/' *> (Frac e <$> parseG) >>= parseF')
+            <|> pure e
+
+
+parseG :: Parser Expr
+parseG = do l <- parseH
+            parseChar '^' *> (Expo l <$> parseG) <|> pure l
+
+
+parseH :: Parser Expr
+parseH = parseChar '-' *> (Umin <$> parseT) <|> parseT
+
+
+parseT :: Parser Expr
+parseT = parseChar '(' *> parseE <* parseChar ')'
+         <|> parseSymbol
+         <|> parseValue
+
+parseSymbol :: Parser Expr
+parseSymbol = Parser $ \input -> case input of
+                                   (a:as) -> if isAlpha a
+                                             then runParser (Term . Symbol <$> parseUntilF isAlpha) (a:as)
+                                             else Left $ "Invalid first character '" ++ a:"' found then parsing symbol"
+                                   []     -> Left "Tried to parse a symbol but found end of string"
+
+
+parseValue :: Parser Expr
+parseValue = Parser $ \input -> case input of
+                                   (a:as) -> if isNumber a
+                                             then runParser (Term . Value . read <$> parseUntilF isNumber) (a:as)
+                                             else Left $ "Invalid first character '" ++ a:"' found then parsing value"
+                                   []     -> Left "Tried to parse a value but found end of string"
+
+
+parseUntilF :: (Char -> Bool) -> Parser String
+parseUntilF f = Parser $ \input -> case input of
+                                     (a:as) -> if f a
+                                               then runParser ((a:) <$> parseUntilF f) as
+                                               else Right ("", a:as)
+                                     [] -> Right ("", [])
+
+
+parse :: String -> Either String Expr
+parse as =  do (e, _) <- runParser parseS as
+               return e
